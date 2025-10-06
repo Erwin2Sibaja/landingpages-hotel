@@ -1,60 +1,103 @@
+/* ==========================================================================
+   GR Solaris Lighthouse - Main JS
+   Estructura:
+   0) Helpers y estado
+   1) Idiomas (i18n)
+   2) Banner (imágenes/video por idioma)
+   3) Motor de reservaciones (URL builder + CTAs)
+   4) Formularios (pax dinámico)
+   5) Datepicker (Lightpick)
+   6) Componentes visuales (Banner slider, Restaurantes)
+   7) Galería (preview + modal)
+   8) Carruseles (Rooms/Benefits/Experiences) + Lazy init
+   9) Bootstrap final
+   ========================================================================== */
+
 document.addEventListener("DOMContentLoaded", () => {
-  const langButtons = document.querySelectorAll(".lang-btn");
-  let currentLang = localStorage.getItem("lang") || "en"; // <-- let, no const
 
+  /* =========================
+     0) Helpers y estado
+     ========================= */
+  let currentLang = localStorage.getItem("lang") || "en";
   document.documentElement.lang = currentLang;
-  loadLanguage(currentLang);
-  updateLanguageSwitcher(currentLang);
-  updateBannerImages(currentLang);
-  toggleWhatsAppButton();
 
+  const calendar = {
+    getToday: () => {
+      const t = new Date();
+      return { year: t.getFullYear(), month: t.getMonth() + 1, day: t.getDate() };
+    },
+    getNext: (date, unit, value) => {
+      const d = new Date(date.year, date.month - 1, date.day);
+      if (unit === "d") d.setDate(d.getDate() + value);
+      return { year: d.getFullYear(), month: d.getMonth() + 1, day: d.getDate() };
+    },
+  };
+
+  const dateParser = (date) =>
+    `${date.year}-${String(date.month).padStart(2, "0")}-${String(date.day).padStart(2, "0")}`;
+
+  // Evitar interacciones fantasmas sobre videos de fondo
   document.querySelectorAll("video.background-hero").forEach(v => {
     v.style.pointerEvents = "none";
   });
 
-  langButtons.forEach((button) => {
-    button.addEventListener("click", () => {
-      const selectedLang = button.getAttribute("data-lang");
-      if (selectedLang && selectedLang !== currentLang) {
-        localStorage.setItem("lang", selectedLang);
-        location.reload();
-      }
-    });
-  });
+  /* =========================
+     1) Idiomas (i18n)
+     ========================= */
+  (function initLanguageSwitcher(){
+    const langButtons = document.querySelectorAll(".lang-btn");
 
-  async function loadLanguage(lang) {
-    try {
-      const response = await fetch(`./i18n/${lang}.json`, { cache: "no-store" });
-      if (!response.ok) throw new Error("Error loading language file");
-      const translations = await response.json();
-      applyTranslations(translations);
-    } catch (error) {
-      console.error("Error loading translations:", error);
-    }
-  }
-
-  function applyTranslations(translations) {
-    document.querySelectorAll("[data-i18n]").forEach((el) => {
-      const key = el.getAttribute("data-i18n");
-      if (translations[key]) {
-        if (el.tagName === "INPUT" || el.tagName === "TEXTAREA") {
-          el.placeholder = translations[key];
-        } else {
-          el.innerHTML = translations[key];
+    langButtons.forEach((button) => {
+      button.addEventListener("click", () => {
+        const selectedLang = button.getAttribute("data-lang");
+        if (selectedLang && selectedLang !== currentLang) {
+          localStorage.setItem("lang", selectedLang);
+          location.reload();
         }
-      }
+      });
     });
-  }
 
-function updateLanguageSwitcher(lang){
-  document.querySelectorAll('.lang-btn').forEach(btn=>{
-    const isActive = btn.getAttribute('data-lang') === lang;
-    btn.classList.toggle('is-active', isActive);
-    btn.setAttribute('aria-pressed', String(isActive));
-  });
-}
+    updateLanguageSwitcher(currentLang);
+    loadLanguage(currentLang);
 
-  function updateBannerImages(lang) {
+    function updateLanguageSwitcher(lang){
+      document.querySelectorAll('.lang-btn').forEach(btn=>{
+        const isActive = btn.getAttribute('data-lang') === lang;
+        btn.classList.toggle('is-active', isActive);
+        btn.setAttribute('aria-pressed', String(isActive));
+      });
+    }
+
+    async function loadLanguage(lang) {
+      try {
+        const response = await fetch(`./i18n/${lang}.json`, { cache: "no-store" });
+        if (!response.ok) throw new Error("Error loading language file");
+        const translations = await response.json();
+        applyTranslations(translations);
+      } catch (error) {
+        console.error("Error loading translations:", error);
+      }
+    }
+
+    function applyTranslations(translations) {
+      document.querySelectorAll("[data-i18n]").forEach((el) => {
+        const key = el.getAttribute("data-i18n");
+        if (translations[key]) {
+          if (el.tagName === "INPUT" || el.tagName === "TEXTAREA") {
+            el.placeholder = translations[key];
+          } else {
+            el.innerHTML = translations[key];
+          }
+        }
+      });
+    }
+  })();
+
+  /* =========================
+     2) Banner (imágenes/video por idioma)
+     ========================= */
+  (function updateBannerImages(){
+    const lang = currentLang;
     const bannerElement = document.querySelector("[data-i18n-banner]");
     if (!bannerElement) return;
 
@@ -75,28 +118,15 @@ function updateLanguageSwitcher(lang){
       const poster = video.getAttribute(`data-i18n-poster-${lang}`);
       if (poster) video.setAttribute("poster", poster);
     }
-  }
+  })();
 
-  const calendar = {
-    getToday: () => {
-      const t = new Date();
-      return { year: t.getFullYear(), month: t.getMonth() + 1, day: t.getDate() };
-    },
-    getNext: (date, unit, value) => {
-      const d = new Date(date.year, date.month - 1, date.day);
-      if (unit === "d") d.setDate(d.getDate() + value);
-      return { year: d.getFullYear(), month: d.getMonth() + 1, day: d.getDate() };
-    },
-  };
-
-  function dateParser(date) {
-    return `${date.year}-${String(date.month).padStart(2, "0")}-${String(date.day).padStart(2, "0")}`;
-  }
-
+  /* =========================
+     3) Motor de reservaciones
+     ========================= */
   function buildReservationURL(target, rooms, adults, childrenAges) {
     const domain = "res.hotelessolaris.com";
     const today = calendar.getToday();
-    const checkIn = calendar.getNext(today, "d", 1);
+    const checkIn  = calendar.getNext(today, "d", 1);
     const checkOut = calendar.getNext(today, "d", 3);
 
     let roomString = "";
@@ -109,31 +139,233 @@ function updateLanguageSwitcher(lang){
       }
     }
 
-    return `https://${domain}/${target}?action=hotel_search&resort=5&roomsAmount=${rooms}${roomString}&currency=${target === "rooms" ? "usd" : "mxn"}&br=1&pr=5&cin=${dateParser(checkIn)}&cout=${dateParser(checkOut)}&utm_source=tripadvisor&utm_medium=landing&utm_campaign=lighthouse`;
+    const currency = (target === "rooms") ? "usd" : "mxn";
+    return `https://${domain}/${target}?action=hotel_search&resort=5&roomsAmount=${rooms}${roomString}&currency=${currency}&br=1&cin=${dateParser(checkIn)}&cout=${dateParser(checkOut)}`;
   }
 
-  function initReservationButtons() {
-    const reservationButtons = document.querySelectorAll(".button-book-now");
-    if (!reservationButtons.length) return;
+  // CTA solo para banner y carrusel de habitaciones
+  (function initScopedReservationButtons(){
+    const banner       = document.querySelector('.banner-slider');
+    const roomsSection = document.querySelector('.rooms-carrousel');
 
-    reservationButtons.forEach((button) => {
-      button.addEventListener("click", (event) => {
-        event.preventDefault();
-        const card = button.closest(".tarjeta");
-        const roomType = card?.getAttribute("data-room-type");
+    const handleReservationClick = (e) => {
+      const link = e.target.closest('a.button-book-now');
+      if (!link) return;
 
-        const roomConfig = {
-          "standard": { rooms: 1, adults: [2], children: [0], childrenAges: [[]] },
-        };
-        const config = roomConfig[roomType] || { rooms: 1, adults: [2], children: [0], childrenAges: [[]] };
-        const target = document.documentElement.lang === "es" ? "cuartos" : "rooms";
-        const url = buildReservationURL(target, config.rooms, config.adults, config.childrenAges);
-        window.open(url, "_blank");
-      });
+      e.preventDefault();
+      e.stopPropagation();
+
+      const card = link.closest('.tarjeta');
+      const roomType =
+        card?.dataset?.roomType ||
+        card?.getAttribute('data-room-type') ||
+        'standard';
+
+      const ROOM_CONFIG = {
+        standard: { rooms: 1, adults: [2], childrenAges: [[]] }
+      };
+      const cfg = ROOM_CONFIG[roomType] || ROOM_CONFIG.standard;
+
+      const target = document.documentElement.lang === 'es' ? 'cuartos' : 'rooms';
+      const url = buildReservationURL(target, cfg.rooms, cfg.adults, cfg.childrenAges);
+
+      window.open(url, '_blank', 'noopener');
+    };
+
+    banner       && banner.addEventListener('click', handleReservationClick);
+    roomsSection && roomsSection.addEventListener('click', handleReservationClick);
+  })();
+
+  /* =========================
+     4) Formularios
+     ========================= */
+  (function initPaxForm(){
+    const roomsSelect = document.getElementById("rooms");
+    roomsSelect && roomsSelect.addEventListener("change", addPaxRows);
+
+    document.addEventListener("input", (event) => {
+      if (event.target.classList.contains("minors-input")) {
+        updateMinorAges(event);
+      }
     });
-  }
 
-  const initBannerSlider = () => {
+    initializeDefaultValues();
+    updateRoomLabels();
+
+    function addPaxRows() {
+      const paxForm = document.getElementById("paxForm");
+      if (!paxForm) return;
+      paxForm.innerHTML = "";
+      const rooms = parseInt(document.getElementById("rooms")?.value || "1", 10);
+      for (let i = 1; i <= rooms; i++) createRoomPaxRow(i, paxForm);
+    }
+
+    function createRoomPaxRow(key, container) {
+      const row = document.createElement("div");
+      row.classList.add("fields");
+
+      const label = document.createElement("label");
+      label.setAttribute("data-key", key);
+      label.textContent = currentLang === 'en' ? `Room #${key}` : `Habitación #${key}`;
+      row.appendChild(label);
+
+      const adultsDiv = document.createElement("div");
+      adultsDiv.classList.add("field");
+      adultsDiv.innerHTML = `
+        <label data-label-type="adults">${currentLang === 'en' ? 'Adults' : 'Adultos'}</label>
+        <input type="number" name="rooms[${key}][adults]" value="2" min="1" max="4">
+      `;
+      row.appendChild(adultsDiv);
+
+      const minorsDiv = document.createElement("div");
+      minorsDiv.classList.add("field");
+      minorsDiv.innerHTML = `
+        <label data-label-type="minors">${currentLang === 'en' ? 'Minors' : 'Menores'}</label>
+        <input type="number" name="rooms[${key}][minors]" value="0" min="0" max="4" data-room="${key}" class="minors-input">
+      `;
+      row.appendChild(minorsDiv);
+
+      const agesDiv = document.createElement("div");
+      agesDiv.classList.add("field", "ages-container");
+      agesDiv.id = `ages-room-${key}`;
+
+      const agesLabel = document.createElement("label");
+      agesLabel.classList.add("ages-label");
+      agesDiv.appendChild(agesLabel);
+      row.appendChild(agesDiv);
+
+      container.appendChild(row);
+    }
+
+    function updateRoomLabels() {
+      document.querySelectorAll(".fields").forEach(row => {
+        const label = row.querySelector("label[data-key]");
+        const key = label?.getAttribute("data-key");
+        if (label && key) label.textContent = currentLang === 'en' ? `Room #${key}` : `Habitación #${key}`;
+        const adultsLabel = row.querySelector("label[data-label-type='adults']");
+        if (adultsLabel) adultsLabel.textContent = currentLang === 'en' ? 'Adults' : 'Adultos';
+        const minorsLabel = row.querySelector("label[data-label-type='minors']");
+        if (minorsLabel) minorsLabel.textContent = currentLang === 'en' ? 'Minors' : 'Menores';
+        const agesLabel = row.querySelector(".ages-label");
+        if(agesLabel) agesLabel.textContent = currentLang === 'en' ? 'Age' : 'Edad';
+      });
+    }
+
+    function updateMinorAges(event) {
+      const input = event.target;
+      const roomKey = input.getAttribute("data-room");
+      const minorsCount = parseInt(input.value, 10) || 0;
+      const agesContainer = document.getElementById(`ages-room-${roomKey}`);
+      if (!agesContainer) return;
+
+      let agesLabel = agesContainer.querySelector(".ages-label");
+      if (!agesLabel) {
+        agesLabel = document.createElement("label");
+        agesLabel.classList.add("ages-label");
+        agesContainer.appendChild(agesLabel);
+      }
+      agesLabel.textContent = currentLang === 'en'
+        ? `Ages for Room #${roomKey}`
+        : `Edades Habitación #${roomKey}`;
+
+      agesContainer.querySelectorAll("select.minor-age").forEach(s => s.remove());
+
+      for (let i = 0; i < minorsCount; i++) {
+        const ageSelect = document.createElement("select");
+        ageSelect.name = `rooms[${roomKey}][ages][${i}]`;
+        ageSelect.classList.add("minor-age");
+        for (let age = 0; age <= 17; age++) {
+          const option = document.createElement("option");
+          option.value = age;
+          option.textContent = age;
+          ageSelect.appendChild(option);
+        }
+        agesContainer.appendChild(ageSelect);
+      }
+    }
+
+    function initializeDefaultValues() {
+      const roomsSelect = document.getElementById("rooms");
+      if (roomsSelect) roomsSelect.value = "1";
+      addPaxRows();
+    }
+  })();
+
+  /* =========================
+     5) Datepicker (Lightpick)
+     ========================= */
+  (function initDatePicker(){
+    const field = document.getElementById("cc");
+    if (!field) return;
+
+    const picker = new Lightpick({
+      field,
+      parentEl: document.getElementById("calendarParent"),
+      minDays: 1,
+      firstDay: 7,
+      format: "YYYY-MM-DD",
+      lang: currentLang,
+      minDate: moment().add(1, "days"),
+      singleDate: false,
+      hideOnBodyClick: false,
+      hoveringTooltip: false,
+      onSelect: function (start, end) {
+        let str = "";
+        let visible = "";
+        if (start) {
+          str += start.format("DD/MM/YYYY") + " -> ";
+          document.getElementById("cin").value = start.format("YYYY-MM-DD");
+          visible = start.format("DD/MM/YY");
+        }
+        if (end) {
+          str += end.format("DD/MM/YYYY");
+          visible += (currentLang === 'en' ? " to " : " a ") + end.format("DD/MM/YY");
+          document.getElementById("cout").value = end.format("YYYY-MM-DD");
+          picker.hide();
+        }
+        field.value = str;
+        field.placeholder = visible;
+        if (start && end) {
+          picker.setStartDate(null);
+          picker.setEndDate(null);
+        }
+      },
+    });
+
+    field.value = currentLang === 'en' ? "Check in - Check out" : "Llegada - Salida";
+
+    const form = document.getElementById("reservation-form");
+    if (form) {
+      form.addEventListener("submit", (event) => {
+        const cin = document.getElementById("cin").value;
+        const cout = document.getElementById("cout").value;
+        if (!cin || !cout) {
+          event.preventDefault();
+          showCustomAlert(currentLang === 'en'
+            ? "Please select both Check-in and Check-out dates."
+            : "Por favor selecciona fechas de Llegada y Salida.");
+          field.focus();
+        }
+      });
+    }
+
+    function showCustomAlert(message) {
+      const alertBox = document.getElementById("customAlert");
+      const alertMessage = document.getElementById("customAlertMessage");
+      const closeBtn = document.getElementById("customAlertClose");
+
+      alertMessage.textContent = message;
+      alertBox.style.display = "flex";
+
+      closeBtn.onclick = () => { alertBox.style.display = "none"; };
+      alertBox.onclick = (e) => { if (e.target === alertBox) alertBox.style.display = "none"; };
+    }
+  })();
+
+  /* =========================
+     6) Componentes visuales
+     ========================= */
+  (function initBannerSlider(){
     const bannerImages = document.querySelectorAll(".banner-slider img");
     if (bannerImages.length === 0) return;
 
@@ -144,9 +376,10 @@ function updateLanguageSwitcher(lang){
       bannerIndex = (bannerIndex + 1) % bannerImages.length;
       bannerImages[bannerIndex].classList.add("active");
     }, 3000);
-  };
+  })();
 
-  const initSlideShow = () => {
+  // Slider de restaurantes
+  (function initSlideShow(){
     const slidesContainer = document.querySelector(".restaurant-slides");
     const slides = document.querySelectorAll(".restaurant-container");
     const prevButton = document.querySelector(".restaurant-arrow-left");
@@ -155,13 +388,17 @@ function updateLanguageSwitcher(lang){
 
     let index = 0;
     const update = () => {
+      slidesContainer.style.transition = 'transform .35s ease';
       slidesContainer.style.transform = `translateX(${-index * 100}%)`;
     };
     prevButton.addEventListener("click", () => { index = (index - 1 + slides.length) % slides.length; update(); });
     nextButton.addEventListener("click", () => { index = (index + 1) % slides.length; update(); });
-  };
+  })();
 
-  const initGaleria = () => {
+  /* =========================
+     7) Galería (preview + modal)
+     ========================= */
+  function initGaleria(){
     const galleryPreview = document.querySelector(".gallery-preview");
     const modal = document.getElementById("gallery-modal");
     const modalCloseButton = document.getElementById("close-modal");
@@ -313,295 +550,18 @@ function updateLanguageSwitcher(lang){
     } else {
       safeInit();
     }
-  };
-
-  function addPaxRows() {
-    const paxForm = document.getElementById("paxForm");
-    if (!paxForm) return;
-    paxForm.innerHTML = "";
-    const rooms = parseInt(document.getElementById("rooms")?.value || "1", 10);
-    for (let i = 1; i <= rooms; i++) createRoomPaxRow(i, paxForm);
   }
 
-  function createRoomPaxRow(key, container) {
-    const row = document.createElement("div");
-    row.classList.add("fields");
-
-    const label = document.createElement("label");
-    label.setAttribute("data-key", key);
-    label.textContent = currentLang === 'en' ? `Room #${key}` : `Habitación #${key}`;
-    row.appendChild(label);
-
-    const adultsDiv = document.createElement("div");
-    adultsDiv.classList.add("field");
-    adultsDiv.innerHTML = `
-      <label data-label-type="adults">${currentLang === 'en' ? 'Adults' : 'Adultos'}</label>
-      <input type="number" name="rooms[${key}][adults]" value="2" min="1" max="4">
-    `;
-    row.appendChild(adultsDiv);
-
-    const minorsDiv = document.createElement("div");
-    minorsDiv.classList.add("field");
-    minorsDiv.innerHTML = `
-      <label data-label-type="minors">${currentLang === 'en' ? 'Minors' : 'Menores'}</label>
-      <input type="number" name="rooms[${key}][minors]" value="0" min="0" max="4" data-room="${key}" class="minors-input">
-    `;
-    row.appendChild(minorsDiv);
-
-    const agesDiv = document.createElement("div");
-    agesDiv.classList.add("field", "ages-container");
-    agesDiv.id = `ages-room-${key}`;
-
-    const agesLabel = document.createElement("label");
-    agesLabel.classList.add("ages-label");
-    agesDiv.appendChild(agesLabel);
-    row.appendChild(agesDiv);
-
-    container.appendChild(row);
-  }
-
-  function updateRoomLabels() {
-    document.querySelectorAll(".fields").forEach(row => {
-      const label = row.querySelector("label[data-key]");
-      const key = label?.getAttribute("data-key");
-      if (label && key) label.textContent = currentLang === 'en' ? `Room #${key}` : `Habitación #${key}`;
-      const adultsLabel = row.querySelector("label[data-label-type='adults']");
-      if (adultsLabel) adultsLabel.textContent = currentLang === 'en' ? 'Adults' : 'Adultos';
-      const minorsLabel = row.querySelector("label[data-label-type='minors']");
-      if (minorsLabel) minorsLabel.textContent = currentLang === 'en' ? 'Minors' : 'Menores';
-      const agesLabel = row.querySelector(".ages-label");
-      if(agesLabel) agesLabel.textContent = currentLang === 'en' ? 'Age' : 'Edad';
-    });
-  }
-
-  function updateMinorAges(event) {
-    const input = event.target;
-    const roomKey = input.getAttribute("data-room");
-    const minorsCount = parseInt(input.value, 10) || 0;
-    const agesContainer = document.getElementById(`ages-room-${roomKey}`);
-    if (!agesContainer) return;
-      let agesLabel = agesContainer.querySelector(".ages-label");
-  if (!agesLabel) {
-    agesLabel = document.createElement("label");
-    agesLabel.classList.add("ages-label");
-    agesContainer.appendChild(agesLabel);
-  }
-  agesLabel.textContent = currentLang === 'en'
-    ? `Ages for Room #${roomKey}`
-    : `Edades Habitación #${roomKey}`;
-    agesContainer.querySelectorAll("select.minor-age").forEach(s => s.remove());
-
-    for (let i = 0; i < minorsCount; i++) {
-      const ageSelect = document.createElement("select");
-      ageSelect.name = `rooms[${roomKey}][ages][${i}]`;
-      ageSelect.classList.add("minor-age");
-      for (let age = 0; age <= 17; age++) {
-        const option = document.createElement("option");
-        option.value = age;
-        option.textContent = age;
-        ageSelect.appendChild(option);
-      }
-      agesContainer.appendChild(ageSelect);
-    }
-  }
-
-  const roomsSelect = document.getElementById("rooms");
-  if (roomsSelect) roomsSelect.addEventListener("change", addPaxRows);
-
-  document.addEventListener("input", (event) => {
-    if (event.target.classList.contains("minors-input")) {
-      updateMinorAges(event);
-    }
-  });
-
-  function initializeDefaultValues() {
-    const roomsSelect = document.getElementById("rooms");
-    if (roomsSelect) roomsSelect.value = "1";
-    addPaxRows();
-  }
-
-  const initDatePicker = () => {
-    const field = document.getElementById("cc");
-    if (!field) return;
-
-    const picker = new Lightpick({
-      field,
-      parentEl: document.getElementById("calendarParent"),
-      minDays: 1,
-      firstDay: 7,
-      format: "YYYY-MM-DD",
-      lang: currentLang,
-      minDate: moment().add(1, "days"),
-      singleDate: false,
-      hideOnBodyClick: false,
-      hoveringTooltip: false,
-      onSelect: function (start, end) {
-        let str = "";
-        let visible = "";
-        if (start) {
-          str += start.format("DD/MM/YYYY") + " -> ";
-          document.getElementById("cin").value = start.format("YYYY-MM-DD");
-          visible = start.format("DD/MM/YY");
-        }
-        if (end) {
-          str += end.format("DD/MM/YYYY");
-          visible += (currentLang === 'en' ? " to " : " a ") + end.format("DD/MM/YY");
-          document.getElementById("cout").value = end.format("YYYY-MM-DD");
-          picker.hide();
-        }
-        field.value = str;
-        field.placeholder = visible;
-        if (start && end) {
-          picker.setStartDate(null);
-          picker.setEndDate(null);
-        }
-      },
-    });
-
-    field.value = currentLang === 'en' ? "Check in - Check out" : "Llegada - Salida";
-
-    const form = document.getElementById("reservation-form");
-    if (form) {
-      form.addEventListener("submit", (event) => {
-        const cin = document.getElementById("cin").value;
-        const cout = document.getElementById("cout").value;
-        if (!cin || !cout) {
-          event.preventDefault();
-          alert(currentLang === 'en'
-            ? "Please select both Check-in and Check-out dates."
-            : "Por favor selecciona fechas de Llegada y Salida.");
-          field.focus();
-        }
-      });
-    }
-  };
-
-  function toggleWhatsAppButton() {
-    const whatsappButton = document.getElementById('whatsappButton');
-  }
-
-  const root     = document.querySelector('.rooms-carrousel');
-  if(!root) return;
-
-  const track    = root.querySelector('.rc-track');
-  const viewport = root.querySelector('.rc-viewport');
-  const prevBtn  = root.querySelector('.rc-prev');
-  const nextBtn  = root.querySelector('.rc-next');
-  const dotsWrap = root.querySelector('.rc-dots');
-  const cards    = Array.from(root.querySelectorAll('.rc-card'));
-  if(!track || !viewport || !cards.length) return;
-
-  let index = 0;
-  let step  = 0;
-  let maxIndex = 0;
-  let downX = 0, startX = 0, isDragging = false, baseX = 0;
-
-  function measure(){
-    const cs = getComputedStyle(track);
-    const gap = parseFloat(cs.columnGap || cs.gap) || 0;
-    const cardWidth = cards[0].getBoundingClientRect().width;
-    step = cardWidth + gap;
-
-    const visible = Math.max(1, Math.floor((viewport.clientWidth + gap) / step));
-    maxIndex = Math.max(0, cards.length - visible);
-  }
-
-  function slideTo(i, smooth=true){
-    index = Math.max(0, Math.min(i, maxIndex));
-    track.style.transition = smooth ? 'transform .35s cubic-bezier(.2,.7,.2,1)' : 'none';
-    track.style.transform  = `translateX(${-index * step}px)`;
-    updateNav();
-    updateDots();
-  }
-
-  function updateNav(){
-    prevBtn.disabled = (index <= 0);
-    nextBtn.disabled = (index >= maxIndex);
-  }
-
-  function buildDots(){
-    dotsWrap.innerHTML = '';
-    cards.forEach((_, i)=>{
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.className = 'rc-dot';
-      b.setAttribute('aria-label', `Ir a la tarjeta ${i+1}`);
-      b.addEventListener('click', ()=> slideTo(i));
-      dotsWrap.appendChild(b);
-    });
-    updateDots();
-  }
-  function updateDots(){
-    const dots = dotsWrap.querySelectorAll('.rc-dot');
-    dots.forEach((d, i)=> d.classList.toggle('is-active', i === index));
-  }
-
-  prevBtn.addEventListener('click', ()=> slideTo(index - 1));
-  nextBtn.addEventListener('click', ()=> slideTo(index + 1));
-
-  viewport.style.touchAction = 'pan-y';
-  track.style.cursor = 'grab';
-
-  viewport.addEventListener('pointerdown', (e)=>{
-    isDragging = true;
-    track.style.cursor = 'grabbing';
-    track.style.transition = 'none';
-    downX  = e.clientX;
-    startX = -index * step;
-    baseX  = startX;
-    viewport.setPointerCapture(e.pointerId);
-  });
-  viewport.addEventListener('pointermove', (e)=>{
-    if(!isDragging) return;
-    const dx = e.clientX - downX;
-    track.style.transform = `translateX(${baseX + dx}px)`;
-  });
-  function endDrag(e){
-    if(!isDragging) return;
-    isDragging = false;
-    track.style.cursor = 'grab';
-    const dx = e.clientX - downX;
-
-    const moved = baseX + dx;
-    const targetIndex = Math.round(-moved / step);
-
-    const threshold = step * 0.25;
-    if (Math.abs(dx) > threshold){
-      slideTo(targetIndex, true);
-    }else{
-      slideTo(index, true);
-    }
-  }
-  viewport.addEventListener('pointerup', endDrag);
-  viewport.addEventListener('pointercancel', endDrag);
-  viewport.addEventListener('pointerleave', endDrag);
-
-  if(!('PointerEvent' in window)){
-    let start = 0;
-    viewport.addEventListener('touchstart', e => { start = e.touches[0].clientX; }, {passive:true});
-    viewport.addEventListener('touchend',   e => {
-      const dx = e.changedTouches[0].clientX - start;
-      if (Math.abs(dx) > 40) slideTo(index + (dx < 0 ? 1 : -1));
-    }, {passive:true});
-  }
-
-  function onResize(){
-    const prev = index;
-    measure();
-    slideTo(Math.min(prev, maxIndex), false);
-  }
-  window.addEventListener('resize', onResize);
-  window.addEventListener('orientationchange', onResize);
-  window.requestIdleCallback ||= (cb)=>setTimeout(()=>cb({timeRemaining:()=>16}),1);
-  window.cancelIdleCallback  ||= (id)=>clearTimeout(id);
-
+  /* =========================
+     8) Carruseles + Lazy init
+     ========================= */
   const ActiveTimers = new Set();
+  const REDUCED_MOTION = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) ActiveTimers.forEach(id => clearInterval(id)), ActiveTimers.clear();
     else document.querySelectorAll('[data-carousel]').forEach(el => el.__resume?.());
   });
-
-  const REDUCED_MOTION = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   function initRoomsCarousel(root){
     const track    = root.querySelector('.rc-track');
@@ -627,8 +587,8 @@ function updateLanguageSwitcher(lang){
       index = Math.max(0, Math.min(i, maxIndex));
       track.style.transition = smooth && !REDUCED_MOTION ? 'transform .35s cubic-bezier(.2,.7,.2,1)' : 'none';
       track.style.transform  = `translateX(${-index * step}px)`;
-      prevBtn.disabled = (index <= 0);
-      nextBtn.disabled = (index >= maxIndex);
+      prevBtn && (prevBtn.disabled = (index <= 0));
+      nextBtn && (nextBtn.disabled = (index >= maxIndex));
       updateDots();
     }
     function buildDots(){
@@ -651,19 +611,23 @@ function updateLanguageSwitcher(lang){
 
     prevBtn?.addEventListener('click', ()=> slideTo(index-1));
     nextBtn?.addEventListener('click', ()=> slideTo(index+1));
+
     viewport.style.touchAction = 'pan-y';
     track.style.cursor = 'grab';
     viewport.addEventListener('pointerdown', (e)=>{
+      // No bloquear clicks en CTAs
+      if (e.target.closest('.button-book-now')) return;
       isDragging = true; track.style.cursor='grabbing'; track.style.transition='none';
       downX = e.clientX; baseX = -index*step; viewport.setPointerCapture(e.pointerId);
     });
     viewport.addEventListener('pointermove', (e)=>{
-      if(!isDragging) return;
+      if(!isDragging || e.target.closest('.button-book-now')) return;
       const dx = e.clientX - downX;
       track.style.transform = `translateX(${baseX + dx}px)`;
     });
     function endDrag(e){
-      if(!isDragging) return; isDragging=false; track.style.cursor='grab';
+      if(!isDragging || e.target.closest('.button-book-now')) return;
+      isDragging=false; track.style.cursor='grab';
       const dx = e.clientX - downX;
       const moved = baseX + dx;
       const targetIndex = Math.round(-moved / step);
@@ -723,19 +687,9 @@ function updateLanguageSwitcher(lang){
     if (window.matchMedia('(max-width: 768px)').matches) return;
     initRoomsCarousel(root);
   }
-
-  function initGallery(root){
-    requestIdleCallback(()=> initGaleria());
+  function initGalleryLazy(root){
+    requestIdleCallback?.(()=> initGaleria()) ?? setTimeout(()=>initGaleria(), 0);
   }
-
-
-  const initMap = {
-    rooms: initRoomsCarousel,
-    rest: initRestaurantsCarousel,
-    benefits: initBenefitsCarousel,
-    experiences: initExperiencesCarousel,
-    gallery: initGallery
-  };
 
   (function lazyCarousels(){
     const nodes = document.querySelectorAll('[data-carousel]');
@@ -747,7 +701,14 @@ function updateLanguageSwitcher(lang){
             const el = entry.target;
             if(entry.isIntersecting && !inited.has(el)){
               const type = el.getAttribute('data-carousel');
-              requestIdleCallback(()=> initMap[type]?.(el));
+              const initMap = {
+                rooms: initRoomsCarousel,
+                rest: initRestaurantsCarousel,
+                benefits: initBenefitsCarousel,
+                experiences: initExperiencesCarousel,
+                gallery: initGalleryLazy
+              };
+              requestIdleCallback?.(()=> initMap[type]?.(el)) ?? initMap[type]?.(el);
               inited.add(el);
             }
             if(!entry.isIntersecting) el.__pause?.();
@@ -758,19 +719,20 @@ function updateLanguageSwitcher(lang){
 
     nodes.forEach(el=>{
       if(io) io.observe(el);
-      else initMap[el.getAttribute('data-carousel')]?.(el);
+      else {
+        const type = el.getAttribute('data-carousel');
+        ({rooms:initRoomsCarousel, rest:initRestaurantsCarousel, benefits:initBenefitsCarousel, experiences:initExperiencesCarousel, gallery:initGalleryLazy}[type])?.(el);
+      }
     });
   })();
 
+  /* =========================
+     9) Bootstrap final
+     ========================= */
+  (function toggleWhatsAppButton(){
+    const whatsappButton = document.getElementById('whatsappButton');
+    // Si en el futuro quieres lógica por idioma o dispositivo, hazlo aquí.
+    void whatsappButton;
+  })();
 
-  measure();
-  buildDots();
-  slideTo(0, false);
-  initBannerSlider();
-  initSlideShow();
-  initGaleria();
-  initDatePicker();
-  initializeDefaultValues();
-  initReservationButtons();
-  updateRoomLabels();
 });
